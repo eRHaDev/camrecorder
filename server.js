@@ -13,4 +13,16 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
+app.post('/upload', (req, res) => {
+  const filename = req.query.filename;
+  if (!filename || !/^[\w\-.]+$/.test(filename)) {
+    return res.status(400).send('Invalid filename');
+  }
+  const filepath = path.join(UPLOADS_DIR, filename);
+  const writeStream = fs.createWriteStream(filepath, { flags: 'a' });
+  req.pipe(writeStream);
+  writeStream.on('finish', () => res.sendStatus(200));
+  writeStream.on('error', () => res.sendStatus(500));
+});
+
 app.listen(PORT, () => console.log(`Listening on http://localhost:${PORT}`));
