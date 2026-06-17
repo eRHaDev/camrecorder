@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Recorder</title>
+  <style>
+    body { font-family: sans-serif; max-width: 640px; margin: 0 auto; padding: 1rem; }
+    button { padding: 1rem 2rem; font-size: 1.2rem; margin: 0.5rem 0; cursor: pointer; }
+    button:disabled { opacity: 0.4; cursor: default; }
+    video { width: 100%; margin: 0.5rem 0; background: #000; }
+    #status { color: gray; margin: 0.5rem 0; min-height: 1.5em; }
+    .recording-item { border-top: 1px solid #ddd; padding-top: 0.5rem; margin-top: 0.5rem; }
+    .recording-item p { margin: 0 0 0.25rem; font-size: 0.9rem; color: #555; }
+  </style>
+</head>
+<body>
+  <h1>Video Recorder</h1>
+  <div>
+    <button id="startBtn">Start Recording</button>
+    <button id="stopBtn" disabled>Stop Recording</button>
+  </div>
+  <p id="status">Ready</p>
+
+  <h2>Recordings</h2>
+  <div id="videos"></div>
+
+  <script>
+    let mediaRecorder = null;
+    let currentFilename = null;
+
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const statusEl = document.getElementById('status');
+
+    async function loadVideos() {
+      const res = await fetch('/videos');
+      const files = await res.json();
+      const container = document.getElementById('videos');
+      if (files.length === 0) {
+        container.innerHTML = '<p>No recordings yet.</p>';
+        return;
+      }
+      container.innerHTML = files.map(f => `
+        <div class="recording-item">
+          <p>${f}</p>
+          <video src="/uploads/${f}" controls></video>
+        </div>
+      `).join('');
+    }
+
+    startBtn.addEventListener('click', async () => {
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      } catch (err) {
+        statusEl.textContent = 'Camera access denied.';
+        return;
+      }
+
+      currentFilename = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '') + '.webm';
+      mediaRecorder = new MediaRecorder(stream);
+
+      mediaRecorder.ondataavailable = async (e) => {
+        if (e.data.size > 0) {
+          await fetch(`/upload?filename=${currentFilename}`, {
+            method: 'POST',
+            body: e.data,
+          });
+        }
+      };
+
+      mediaRecorder.start(1000);
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      statusEl.textContent = 'Recording...';
+    });
+
+    stopBtn.addEventListener('click', () => {
+      mediaRecorder.stop();
+      mediaRecorder.stream.getTracks().forEach(t => t.stop());
+      mediaRecorder = null;
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      statusEl.textContent = 'Saved!';
+      setTimeout(loadVideos, 500);
+    });
+
+    loadVideos();
+  </script>
+</body>
+</html>
