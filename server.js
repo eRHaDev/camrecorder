@@ -25,4 +25,12 @@ app.post('/upload', (req, res) => {
   writeStream.on('error', () => { if (!res.headersSent) res.sendStatus(500); });
 });
 
+app.get('/videos', (req, res) => {
+  const files = fs.readdirSync(UPLOADS_DIR)
+    .filter(f => f.endsWith('.webm'))
+    .sort()
+    .reverse();
+  res.json(files);
+});
+
 app.listen(PORT, () => console.log(`Listening on http://localhost:${PORT}`));
