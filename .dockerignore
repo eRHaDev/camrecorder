@@ -2,3 +2,4 @@ node_modules
 uploads
 .git
 docs
+.env
