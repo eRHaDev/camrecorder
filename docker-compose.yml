@@ -1,0 +1,8 @@
+services:
+  video-recorder:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./uploads:/app/uploads
+    restart: unless-stopped
