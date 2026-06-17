@@ -60,6 +60,7 @@
     }
 
     startBtn.addEventListener('click', async () => {
+      lastUploadPromise = Promise.resolve();
       let stream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -71,12 +72,14 @@
       currentFilename = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '') + '.webm';
       mediaRecorder = new MediaRecorder(stream);
 
-      mediaRecorder.ondataavailable = async (e) => {
+      mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
-          lastUploadPromise = fetch(`/upload?filename=${currentFilename}`, {
-            method: 'POST',
-            body: e.data,
-          });
+          lastUploadPromise = lastUploadPromise.then(() =>
+            fetch(`/upload?filename=${currentFilename}`, {
+              method: 'POST',
+              body: e.data,
+            })
+          );
         }
       };
 

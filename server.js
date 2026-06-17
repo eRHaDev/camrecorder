@@ -13,6 +13,14 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
+app.use('/upload', (req, res, next) => {
+  const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+  if (contentLength > 100 * 1024 * 1024) {
+    return res.status(413).send('Chunk too large');
+  }
+  next();
+});
+
 app.post('/upload', (req, res) => {
   const filename = req.query.filename;
   if (!filename || !/^[\w\-]+\.webm$/.test(filename)) {
@@ -25,8 +33,8 @@ app.post('/upload', (req, res) => {
   writeStream.on('error', () => { if (!res.headersSent) res.sendStatus(500); });
 });
 
-app.get('/videos', (req, res) => {
-  const files = fs.readdirSync(UPLOADS_DIR)
+app.get('/videos', async (req, res) => {
+  const files = (await fs.promises.readdir(UPLOADS_DIR))
     .filter(f => f.endsWith('.webm'))
     .sort()
     .reverse();
