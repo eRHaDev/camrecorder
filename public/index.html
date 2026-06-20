@@ -29,6 +29,7 @@
     let lastUploadPromise = Promise.resolve();
     let currentStream = null;
     let facingMode = 'environment';
+    let uploadHadError = false;
 
     const previewEl = document.getElementById('preview');
     const startBtn = document.getElementById('startBtn');
@@ -37,9 +38,7 @@
     const statusEl = document.getElementById('status');
 
     async function startPreview(mode) {
-      if (currentStream) {
-        currentStream.getTracks().forEach(t => t.stop());
-      }
+      const oldStream = currentStream;
       try {
         currentStream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: mode },
@@ -49,12 +48,30 @@
         statusEl.textContent = 'Camera access denied or unavailable.';
         return;
       }
+      if (oldStream) {
+        oldStream.getTracks().forEach(t => t.stop());
+      }
       previewEl.srcObject = currentStream;
       facingMode = mode;
+      try {
+        await previewEl.play();
+      } catch (err) {
+        // Autoplay may be blocked until a user gesture; ignore.
+      }
     }
 
     flipBtn.addEventListener('click', () => {
       startPreview(facingMode === 'environment' ? 'user' : 'environment');
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible' || !currentStream || mediaRecorder) return;
+      const track = currentStream.getVideoTracks()[0];
+      if (!track || track.readyState === 'ended') {
+        startPreview(facingMode);
+      } else {
+        previewEl.play().catch(() => {});
+      }
     });
 
     startBtn.addEventListener('click', () => {
@@ -63,17 +80,19 @@
         return;
       }
       lastUploadPromise = Promise.resolve();
-      currentFilename = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '') + '.webm';
+      uploadHadError = false;
+      const randomSuffix = Math.random().toString(36).slice(2, 8);
+      currentFilename = new Date().toISOString().replace(/[:.]/g, '-') + '-' + randomSuffix + '.webm';
       mediaRecorder = new MediaRecorder(currentStream);
 
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
-          lastUploadPromise = lastUploadPromise.then(() =>
-            fetch(`/upload?filename=${currentFilename}`, {
-              method: 'POST',
-              body: e.data,
-            })
-          );
+          lastUploadPromise = lastUploadPromise
+            .then(() => uploadChunk(e.data))
+            .catch((err) => {
+              console.error('Chunk upload failed', err);
+              uploadHadError = true;
+            });
         }
       };
 
@@ -84,11 +103,29 @@
       statusEl.textContent = 'Recording...';
     });
 
+    async function uploadChunk(blob, attempt = 1) {
+      try {
+        const res = await fetch(`/upload?filename=${currentFilename}`, {
+          method: 'POST',
+          body: blob,
+        });
+        if (!res.ok) throw new Error('Upload failed: ' + res.status);
+      } catch (err) {
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 500));
+          return uploadChunk(blob, attempt + 1);
+        }
+        throw err;
+      }
+    }
+
     stopBtn.addEventListener('click', () => {
       const recorder = mediaRecorder;
       recorder.onstop = async () => {
         await lastUploadPromise;
-        statusEl.textContent = 'Saved!';
+        statusEl.textContent = uploadHadError
+          ? 'Saved, but some footage may be missing (upload errors occurred).'
+          : 'Saved!';
       };
       recorder.stop();
       mediaRecorder = null;
